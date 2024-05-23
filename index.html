@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Difference Calculator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="loading">Loading...</div>
+    <div class="container">
+        <h1>Text Difference Calculator</h1>
+        <h6>Prompt for rewriting assistant:</h6>
+        <textarea id="prompt" class="save-as-cookie">Rewrite the following text, make it more concise and scientific. Only return the rewritten text. Please, use Latex if Latex is provided (including citations).</textarea>
+        <h6>Text to rewrite:</h6>
+        <textarea id="text1" class="save-as-cookie">Test text with aa mistake.</textarea>
+        <br>
+        <div style="display: flex; align-items: center;">
+            <label for="api-key" style="margin-right: 10px;">OpenAI API Key: <input id="api-key" class="save-as-cookie"/></label>
+            <label for="model" style="margin-right: 10px;">Model: 
+                <select id="model" class="save-as-cookie">
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (~0.01$/1000 words)</option>
+                    <option value="gpt-4o">GPT-4o (~0.10$/1000 words)</option>
+                    <option value="gpt-4-turbo">GPT-4-turbo (~0.20$/1000 words)</option>
+                    <!-- Add more options as needed -->
+                </select>
+            </label>
+        </div>
+        <br>
+        <button id="rewriteText" class="button">Rewrite Text</button>
+        <div id="result"></div>
+        <br>
+        <div id="price" style="font-size: 0.8em; color: #888;"></div>
+    </div>
+    <script src="diff_match_patch.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
