@@ -23,6 +23,25 @@ h1, h2 {
     margin-top: 0;
 }
 
+.container {
+    width: 100%;
+    overflow: hidden; /* Clear floats */
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    margin: 0;
+}
+
+.header .github-button {
+    float: right;
+}
+
 textarea {
     width: 95%;
     height: 100px;
