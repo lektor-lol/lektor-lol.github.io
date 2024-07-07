@@ -8,7 +8,7 @@
     <script async defer src="https://buttons.github.io/buttons.js"></script>
 </head>
 <body>
-    <div id="loading">Loading...</div>
+    <div id="loading" class="spinner"></div>
     <div class="container">
         <div class="header">
             <h1>LEKTOR LOL</h1>
@@ -16,8 +16,6 @@
         </div>
         <h6>Prompt for rewriting assistant:</h6>
         <textarea id="prompt" class="save-as-cookie">Rewrite the following text, make it more concise and scientific. Only return the rewritten text. Please, use Latex if Latex is provided (including citations).</textarea>
-        <h6>Text to rewrite:</h6>
-        <textarea id="text1" class="save-as-cookie">Test text with aa mistake.</textarea>
         <br>
         <div style="display: flex; align-items: center;">
             <label for="api-key" style="margin-right: 10px;">OpenAI API Key: <input id="api-key" class="save-as-cookie"/></label>
@@ -31,7 +29,7 @@
             </label>
         </div>
         <br>
-        <button id="rewriteText" class="button">Rewrite Text</button>
+        <button id="rewriteText" class="button">Paste and rewrite text currently in clipboard</button>
         <div id="result"></div>
         <br>
         <div id="price" style="font-size: 0.8em; color: #888;"></div>
