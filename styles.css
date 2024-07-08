@@ -32,8 +32,18 @@ h1, h2 {
     margin: 0;
 }
 
-.header .github-button {
-    float: right;
+#right-header {
+    display: flex;
+    align-items: center;
+    margin: 10px;
+}
+
+.github-button {
+    margin-left: 10px;
+}
+
+.toggle-container {
+    margin: 10px;
 }
 
 textarea {
@@ -236,4 +246,39 @@ ins {
 }
 [contenteditable="true"]:focus {
     border-bottom: 1px dashed #ccc;
+}
+
+#copy-all-text-button {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.3s, background-color 0.3s, visibility 0.3s;
+    z-index: 1002;
+    visibility: hidden;
+}
+
+#copy-all-text-button-tooltip {
+    position: fixed;
+    bottom: 70px; /* Adjust this value to position the tooltip above the button */
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: 80%;
+    background-color: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    text-align: center;
+    box-sizing: border-box;
+    z-index: 1001;
 }

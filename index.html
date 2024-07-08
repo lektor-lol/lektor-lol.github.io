@@ -12,7 +12,16 @@
     <div class="container">
         <div class="header">
             <h1>LEKTOR LOL</h1>
+            <div id="right-header">
+            <div class="toggle-container">
+                <label class="switch">
+                    <input type="checkbox" id="commentToggle" checked>
+                    <span class="slider round"></span>
+                </label>
+                <span class="toggle-label">Generate change summaries</span>
+            </div>
             <a class="github-button" href="https://github.com/lektor-lol/lektor-lol.github.io" data-color-scheme="no-preference: light; light: light_high_contrast; dark: light_high_contrast;" data-icon="octicon-star" data-size="large" aria-label="Star lektor-lol/lektor-lol.github.io on GitHub">Star</a>
+            </div>
         </div>
         <h6>Prompt for rewriting assistant:</h6>
         <textarea id="prompt" class="save-as-cookie">Rewrite the following text, make it more concise and scientific. Only return the rewritten text. Please, use Latex if Latex is provided (including citations).</textarea>
@@ -34,6 +43,8 @@
         <br>
         <div id="price" style="font-size: 0.8em; color: #888;"></div>
     </div>
+    <div id="copy-all-text-button-tooltip"></div>
+    <button id="copy-all-text-button" class="floating-button">Copy All Text</button>
     <script src="diff_match_patch.js"></script>
     <script src="script.js"></script>
 </body>

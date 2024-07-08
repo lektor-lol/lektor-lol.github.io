@@ -93,10 +93,12 @@ document.getElementById('rewriteText').addEventListener('click', () => {
 
 async function calculateDiff(sentence, spacing_character) {
     async function create_rewrite(sentence, spacing_character) {
-        const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence ${sentence}`, prompt=document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.");
+        const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.";
+        const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
         const price = data[1];
+        const comments_enabled = document.getElementById('commentToggle').checked;
         let comment = "";
-        if (data[0] !== sentence) {
+        if (data[0] !== sentence && comments_enabled) {
             const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
             comment = comment_data[0];
         }
@@ -148,12 +150,14 @@ async function calculateDiff(sentence, spacing_character) {
         });
 
         newSpan.innerHTML = resultHTML;
+        comment_part = (comment !== "") ? `<span class='comment-label' style="color: #888; font-size: 0.8em;">Comment:</span>  <p class="comment-text">${comment.replace(/\n/g, '<br>')}</p>` : "";
         const sentenceHoverButtons = `<div class="comment-box">
-                                        <p class="comment-text">${comment.replace(/\n/g, '<br>')}</p>
+                                        ${comment_part}
+                                        <span style="color: #888; font-size: 0.8em;">Accept or reject all of the above:</span><br>
                                         <button class="diff-button reject-button reject-all">❌</button> <!-- Cross symbol -->
                                         <button class="diff-button accept-button accept-all">✅</button> <!-- Tick symbol -->
                                     </div>`;
-        if (comment !== "") {
+        if (newSpan.querySelector('.diff-part')) {
             newSpan.innerHTML += sentenceHoverButtons;
         }
 
@@ -263,7 +267,7 @@ async function calculateDiff(sentence, spacing_character) {
         });
     }
 
-    if (comment !== "") {
+    if (newSpan.querySelector('.accept-all')) {
         newSpan.querySelector('.accept-all').addEventListener('click', accept_all_edits);
         newSpan.querySelector('.reject-all').addEventListener('click', reject_all_edits);
     }
@@ -277,6 +281,98 @@ async function calculateDiff(sentence, spacing_character) {
     return price;
 }
 
+
+function get_current_rewritten_text(accept_all_edits = true) {
+    const resultDiv = document.getElementById('result');
+    const allSpans = resultDiv.querySelectorAll('span');
+    let text = "";
+    for (const span of allSpans) {
+        if (span.classList.contains('diff-part')) {
+            if (accept_all_edits) {
+                const insElement = span.querySelector('ins');
+                text += insElement ? insElement.innerText : '';
+            } else {
+                const delElement = span.querySelector('del');
+                text += delElement ? delElement.innerText : '';
+            }
+        } else if (span.classList.contains('unchanged-text')) {
+            text += span.innerText;
+        }
+    }
+    return text;
+}
+
+const floatingButton = document.getElementById('copy-all-text-button');
+
+// Function to update button state
+function updateButtonState() {
+    const resultDiv = document.getElementById('result');
+    const openChanges = resultDiv.querySelectorAll('.diff-part:not(.fade-out)');
+    const hasText = resultDiv.textContent.trim().length > 0;
+    
+    if (!hasText) {
+        floatingButton.style.visibility = 'hidden';
+    } else if (openChanges.length > 0) {
+        floatingButton.style.visibility = 'visible';
+        floatingButton.style.opacity = '0.5';
+        floatingButton.style.backgroundColor = '#555';
+        floatingButton.disabled = true;
+    } else {
+        floatingButton.style.visibility = 'visible';
+        floatingButton.style.opacity = '1';
+        floatingButton.style.backgroundColor = '#007bff';
+        floatingButton.disabled = false;
+    }
+}
+
+// Call updateButtonState initially and after any changes
+updateButtonState();
+const observer = new MutationObserver(updateButtonState);
+observer.observe(document.getElementById('result'), { childList: true, subtree: true, characterData: true });
+
+const tooltip = document.getElementById('copy-all-text-button-tooltip');
+tooltip_standard_text = "You need to first go through all changes";
+tooltip.textContent = tooltip_standard_text;
+
+// Show/hide tooltip on hover when button is disabled
+floatingButton.addEventListener('mouseenter', () => {
+    if (floatingButton.disabled) {
+        tooltip.style.opacity = '1';
+    }
+});
+floatingButton.addEventListener('mouseleave', () => {
+    tooltip.style.opacity = '0';
+});
+
+// Add click event listener to the button
+floatingButton.addEventListener('click', function() {
+    if (!this.disabled) {
+        const text = get_current_rewritten_text();
+        if (text.trim().length > 0) {
+            navigator.clipboard.writeText(text).then(() => {
+                tooltip.textContent = 'All text copied to clipboard!';
+                tooltip.style.opacity = '1';
+                setTimeout(() => {
+                    tooltip.style.opacity = '0';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        } else {
+            tooltip.textContent = 'No text to copy!';
+            tooltip.style.opacity = '1';
+            setTimeout(() => {
+                tooltip.style.opacity = '0';
+            }, 2000);
+        }
+    }
+});
+
+tooltip.addEventListener('transitionend', function onTransitionEnd(event) {
+    if (event.propertyName === 'opacity' && tooltip.style.opacity === '0') {
+        tooltip.textContent = tooltip_standard_text;
+    }
+});
 
 
 // COOKIE LOGIC
