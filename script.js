@@ -77,9 +77,44 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             const price_div = document.getElementById('price');
             price_div.innerText = "";
 
-            const sentences_with_trailing_spaces = text.match(/[^\.!\?]+[\.!\?]+[\s]?/g) || [];
-            let spacing_characters = sentences_with_trailing_spaces.map(sentence => sentence.slice(-1).match(/\s/) ? sentence.slice(-1) : '');
-            let sentences = sentences_with_trailing_spaces.map(sentence => sentence.trim());
+            let json_response, sentences, spacing_characters;
+            let attempts = 0;
+            const max_attempts = 3;
+
+            while (attempts < max_attempts) {
+                try {
+                    const response = await chat_completion(
+                        `Split the following text into sentences and extract trailing spaces:
+                        ${text}
+                        Return a JSON object with two arrays:
+                        1. 'sentences': An array of trimmed sentences.
+                        2. 'spacing': An array of trailing spaces (empty string if none).
+                        
+                        Example:
+                        Input: "Hello world.  How are you? I'm fine. "
+                        Output: {
+                            "sentences": ["Hello world.", "How are you?", "I'm fine."],
+                            "spacing": ["  ", " ", " "]
+                        }`,
+                        true,
+                        "You are a text processing assistant. Respond only with the requested JSON."
+                    );
+                    
+                    const [rewritten_text, price] = response;
+                    json_response = JSON.parse(rewritten_text);
+                    sentences = json_response.sentences;
+                    spacing_characters = json_response.spacing;
+                    break; // If successful, exit the loop
+                } catch (error) {
+                    console.error(`Attempt ${attempts + 1} failed:`, error);
+                    attempts++;
+                    if (attempts >= max_attempts) {
+                        console.error("Max attempts reached. Unable to process the text.");
+                        throw new Error("Failed to process the text after multiple attempts");
+                    }
+                }
+            }
+            console.log('spacing characters', spacing_characters);
             let total_price = 0;
             for (let i = 0; i < sentences.length; i++) {
                 const sentence = sentences[i];
