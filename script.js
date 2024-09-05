@@ -460,6 +460,10 @@ tooltip.addEventListener('transitionend', function onTransitionEnd(event) {
     }
 });
 
+document.getElementById('predefined-prompts').addEventListener('change', function() {
+    document.getElementById('prompt').value = this.options[this.selectedIndex].text;
+});
+
 
 // COOKIE LOGIC
 // LOCALSTORAGE LOGIC
@@ -499,6 +503,8 @@ function loadTextFromLocalStorage() {
 window.onload = function() {
     loadTextFromLocalStorage();
 };
+
+
 
 
 
