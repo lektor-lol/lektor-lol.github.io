@@ -155,7 +155,7 @@ async function create_rewrite(sentence, spacing_character="") {
     const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.";
     const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
     const price = data[1];
-    const comments_enabled = document.getElementById('commentToggle').checked;
+    const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
     let comment = "";
     if (data[0] !== sentence && comments_enabled) {
         const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
