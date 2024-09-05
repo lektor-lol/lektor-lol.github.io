@@ -462,7 +462,10 @@ tooltip.addEventListener('transitionend', function onTransitionEnd(event) {
 });
 
 document.getElementById('predefined-prompts').addEventListener('change', function() {
-    document.getElementById('prompt').value = this.options[this.selectedIndex].text;
+    const promptInput = document.getElementById('prompt');
+    promptInput.value = this.options[this.selectedIndex].text;
+    // trigger the input event
+    promptInput.dispatchEvent(new Event('input'));
 });
 
 
