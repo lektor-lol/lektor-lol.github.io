@@ -93,8 +93,6 @@ button {
 }
 
 .diff-part {
-    position: relative;
-    display: inline;
     padding: 0; /* Remove padding */
     transition: opacity 0.2s, color 0.2s;
     margin: 0;

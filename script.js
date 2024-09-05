@@ -268,7 +268,8 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
             const text_pieces = sentenceArea.querySelectorAll('.unchanged-text');
             let text = "";
             for (const piece of text_pieces) {
-                text += piece.innerText;
+                // Preserve newlines and trailing spaces
+                text += piece.textContent;
             }
             sentenceArea.innerHTML = `<span contenteditable="true" class="unchanged-text">${text}</span>`;
             const redoButton = document.createElement('button');
