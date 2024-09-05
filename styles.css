@@ -240,6 +240,11 @@ ins {
     word-wrap: break-word; /* Break long words to fit within the container */
 }
 
+.hover-highlight {
+    background-color: #f0f0f0;
+    transition: background-color 0.3s ease;
+}
+
 
 [contenteditable="true"] {
     outline: none;

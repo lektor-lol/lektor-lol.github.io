@@ -1,4 +1,5 @@
 openai_prices_per_million_prompt_and_completion_tokens = {
+    "gpt-4o-mini": [0.15,0.6],
     "gpt-3.5-turbo": [0.5, 1.5],
     "gpt-4o": [5.0, 15.0],
     "gpt-4-turbo": [10.0, 30.0],
@@ -76,69 +77,101 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             document.getElementById('result').innerHTML = "";
             const price_div = document.getElementById('price');
             price_div.innerText = "";
+            const [rewritten_text, _, price] = await create_rewrite(original_text, "");
+            const diff = compute_diff(original_text, rewritten_text);
+            // Split the original and rewritten text on punctuation in unchanged sections
+            let originalSentences = [];
+            let rewrittenSentences = [];
+            let spacingCharacters = [];
+            let currentOriginal = '';
+            let currentRewritten = '';
+            let currentSpacing = '';
 
-            let json_response, sentences, spacing_characters;
-            let attempts = 0;
-            const max_attempts = 3;
-
-            while (attempts < max_attempts) {
-                try {
-                    const response = await chat_completion(
-                        `Split the following text into sentences and extract trailing spaces:
-                        ${text}
-                        Return a JSON object with two arrays:
-                        1. 'sentences': An array of trimmed sentences.
-                        2. 'spacing': An array of trailing spaces (empty string if none).
-                        
-                        Example:
-                        Input: "Hello world.  How are you? I'm fine. "
-                        Output: {
-                            "sentences": ["Hello world.", "How are you?", "I'm fine."],
-                            "spacing": ["  ", " ", " "]
-                        }`,
-                        true,
-                        "You are a text processing assistant. Respond only with the requested JSON."
-                    );
-                    
-                    const [rewritten_text, price] = response;
-                    json_response = JSON.parse(rewritten_text);
-                    sentences = json_response.sentences;
-                    spacing_characters = json_response.spacing;
-                    break; // If successful, exit the loop
-                } catch (error) {
-                    console.error(`Attempt ${attempts + 1} failed:`, error);
-                    attempts++;
-                    if (attempts >= max_attempts) {
-                        console.error("Max attempts reached. Unable to process the text.");
-                        throw new Error("Failed to process the text after multiple attempts");
+            for (let i = 0; i < diff.length; i++) {
+                const operation = diff[i][0];
+                const content = diff[i][1];
+                console.log("content", content);
+                if (operation === 0) { // Unchanged section
+                    const segments = content.split(/([.!?])/);
+                    console.log("segments", segments);
+                    for (let j = 0; j < segments.length; j++) {
+                        currentOriginal += segments[j];
+                        currentRewritten += segments[j];
+                        if (j % 2 === 1) { // Punctuation
+                            // Extract spacing from the original text
+                            if (j < segments.length - 1 && segments[j+1] !== "") {
+                                const nextSegment = segments[j+1];
+                                currentSpacing = nextSegment.match(/^\s*/)[0];
+                            }
+                            else {
+                                currentSpacing = "";
+                                if (i < diff.length - 1) {
+                                    next_content = diff[i+1][1];
+                                    currentSpacing = next_content.match(/^\s*/)[0];
+                                }
+                            }
+                            originalSentences.push(currentOriginal.trim());
+                            rewrittenSentences.push(currentRewritten.trim());
+                            spacingCharacters.push(currentSpacing);
+                            currentOriginal = '';
+                            currentRewritten = '';
+                            currentSpacing = '';
+                        }
                     }
+                } else if (operation === -1) { // Deletion
+                    currentOriginal += content;
+                } else if (operation === 1) { // Addition
+                    currentRewritten += content;
                 }
             }
-            console.log('spacing characters', spacing_characters);
-            let total_price = 0;
-            for (let i = 0; i < sentences.length; i++) {
-                const sentence = sentences[i];
-                const spacing_character = spacing_characters[i];
-                const price = await calculateDiff(sentence, spacing_character);
-                total_price += price;
+
+
+            if (currentOriginal || currentRewritten) {
+                originalSentences.push(currentOriginal.trim());
+                rewrittenSentences.push(currentRewritten.trim());
+                spacingCharacters.push('');
             }
-            price_div.innerText = `The calculations have cost about USD ${(total_price).toFixed(6)}.`;
+
+            let parallelSentences = originalSentences.map((original, index) => ({
+                original,
+                rewritten: rewrittenSentences[index],
+                spacing: spacingCharacters[index]
+            }));
+
+            for (const sentence of parallelSentences) {
+                console.log("spacing", sentence.spacing);
+                console.log("original", sentence.original);
+                console.log("rewritten", sentence.rewritten);
+                await calculateDiff(sentence.original, sentence.rewritten, sentence.spacing);
+            }
+
+
+            // const total_price = await calculateDiff(original_text, rewritten_text);
+            price_div.innerText = `The calculations have cost about USD ${(price).toFixed(6)}.`;
     });
 });
 
-async function calculateDiff(sentence, spacing_character) {
-    async function create_rewrite(sentence, spacing_character) {
-        const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.";
-        const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
-        const price = data[1];
-        const comments_enabled = document.getElementById('commentToggle').checked;
-        let comment = "";
-        if (data[0] !== sentence && comments_enabled) {
-            const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
-            comment = comment_data[0];
-        }
-        return [data[0] + spacing_character, comment, price];
+async function create_rewrite(sentence, spacing_character="") {
+    const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.";
+    const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
+    const price = data[1];
+    const comments_enabled = document.getElementById('commentToggle').checked;
+    let comment = "";
+    if (data[0] !== sentence && comments_enabled) {
+        const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
+        comment = comment_data[0];
     }
+    return [data[0] + spacing_character, comment, price];
+}
+
+function compute_diff(text1, text2) {
+    const dmp = new diff_match_patch();
+    const diff = dmp.diff_main(text1, text2);
+    dmp.diff_cleanupSemantic(diff);
+    return diff; // an array of [[{insert=1, delete=-1, equal=0}, text], ...]
+}
+
+async function calculateDiff(sentence, rewritten_sentence, spacing_character="") {
     const resultDiv = document.getElementById('result');
 
     const uniqueId = 'result-' + Math.random().toString(36).substr(2, 9);
@@ -147,10 +180,8 @@ async function calculateDiff(sentence, spacing_character) {
     newSpan.classList.add('sentence-area');
     resultDiv.appendChild(newSpan);
 
-    function create_initial_diff_html(text1, text2, comment) {
-        const dmp = new diff_match_patch();
-        const diff = dmp.diff_main(text1, text2);
-        dmp.diff_cleanupSemantic(diff);
+    function create_initial_diff_html(text1, text2, comment="") {
+        diff = compute_diff(text1, text2);
 
         let resultHTML = '';
 
@@ -165,9 +196,9 @@ async function calculateDiff(sentence, spacing_character) {
                 const prevPart = diff[index - 1];
                 if (prevPart && prevPart[0] === -1) {
                     // Previous part was deleted text (red)
-                    resultHTML += `<span class="diff-part edit-area" data-index="${index}"><del>${prevPart[1]}</del><ins>${part[1]}</ins>${hover_buttons}</span>`;
+                    resultHTML += `<span class="text diff-part edit-area" data-index="${index}"><del>${prevPart[1]}</del><ins>${part[1]}</ins>${hover_buttons}</span>`;
                 } else {
-                    resultHTML += `<span class="diff-part only-ins edit-area"><ins class=" edit-area" data-index="${index}">${part[1]}</ins>${hover_buttons}</span>`;
+                    resultHTML += `<span class="text diff-part only-ins edit-area"><ins class=" edit-area" data-index="${index}">${part[1]}</ins>${hover_buttons}</span>`;
                 }
             } else if (part[0] === -1) {
                 // Deleted text (red)
@@ -176,11 +207,11 @@ async function calculateDiff(sentence, spacing_character) {
                     // Next part is added text (green)
                     // Handled in the next iteration
                 } else {
-                    resultHTML += `<span class="diff-part only-del edit-area"><del class=" edit-area" data-index="${index}">${part[1]}</del>${hover_buttons}</span>`;
+                    resultHTML += `<span class="text diff-part only-del edit-area"><del class=" edit-area" data-index="${index}">${part[1]}</del>${hover_buttons}</span>`;
                 }
             } else {
                 // Unchanged text
-                resultHTML += `<span contenteditable="true" class="unchanged-text" data-index="${index}" style="color:black">${part[1]}</span>`;
+                resultHTML += `<span contenteditable="true" class="text unchanged-text" data-index="${index}" style="color:black">${part[1]}</span>`;
             }
         });
 
@@ -188,12 +219,32 @@ async function calculateDiff(sentence, spacing_character) {
         comment_part = (comment !== "") ? `<span class='comment-label' style="color: #888; font-size: 0.8em;">Comment:</span>  <p class="comment-text">${comment.replace(/\n/g, '<br>')}</p>` : "";
         const sentenceHoverButtons = `<div class="comment-box">
                                         ${comment_part}
-                                        <span style="color: #888; font-size: 0.8em;">Accept or reject all of the above:</span><br>
+                                        <span style="color: #888; font-size: 0.8em;">Accept or reject all of the above:</span>
                                         <button class="diff-button reject-button reject-all">❌</button> <!-- Cross symbol -->
                                         <button class="diff-button accept-button accept-all">✅</button> <!-- Tick symbol -->
                                     </div>`;
+
+        // Add this new function after the sentenceHoverButtons definition
+        function addCommentBoxHoverEffect(newSpan) {
+            const commentBoxButtons = newSpan.querySelectorAll('.comment-box .diff-button');
+            commentBoxButtons.forEach(button => {
+                button.addEventListener('mouseenter', () => {
+                    newSpan.querySelectorAll('.text').forEach(span => {
+                        span.classList.add('hover-highlight');
+                    });
+                });
+                button.addEventListener('mouseleave', () => {
+                    newSpan.querySelectorAll('.text').forEach(span => {
+                        span.classList.remove('hover-highlight');
+                    });
+                });
+            });
+        }
+
+        // Call this function after adding the sentenceHoverButtons
         if (newSpan.querySelector('.diff-part')) {
             newSpan.innerHTML += sentenceHoverButtons;
+            addCommentBoxHoverEffect(newSpan);
         }
 
     async function redo_sentence_area(uniqueId) {
@@ -311,8 +362,8 @@ async function calculateDiff(sentence, spacing_character) {
     document.getElementById('result').classList.add('result-filled');
     }
     const text1 = sentence + spacing_character;
-    const [text2, comment, price] = await create_rewrite(sentence, spacing_character);
-    create_initial_diff_html(text1, text2, comment);
+    const text2 = rewritten_sentence + spacing_character;
+    create_initial_diff_html(text1, text2);
     return price;
 }
 
