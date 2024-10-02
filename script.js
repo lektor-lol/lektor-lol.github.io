@@ -28,6 +28,47 @@ async function fetchWithLoadingIndicator(url, options = {}) {
     }
 }
 
+function addPromptToPastPrompts(prompt) {
+    const savedPrompts = JSON.parse(localStorage.getItem('pastPrompts') || '[]');
+
+    // Remove the prompt if it already exists
+    const existingIndex = savedPrompts.indexOf(prompt);
+    if (existingIndex !== -1) {
+        savedPrompts.splice(existingIndex, 1);
+    }
+
+    // Add prompt to the top of the list
+    savedPrompts.unshift(prompt);
+
+    // Save to localStorage
+    localStorage.setItem('pastPrompts', JSON.stringify(savedPrompts));
+
+    // Update UI
+    updatePastPromptsUI(savedPrompts);
+}
+
+function updatePastPromptsUI(savedPrompts = null) {
+    const pastPrompts = document.getElementById('past-prompts');
+    pastPrompts.innerHTML = ''; // Clear existing options
+
+    // Add an empty option as the first prompt
+    const emptyOption = document.createElement('option');
+    emptyOption.text = '';
+    emptyOption.value = '';
+    pastPrompts.add(emptyOption);
+
+    // If no savedPrompts provided, load from localStorage
+    if (savedPrompts === null) {
+        savedPrompts = JSON.parse(localStorage.getItem('pastPrompts') || '[]');
+    }
+
+    savedPrompts.forEach(prompt => {
+        const option = document.createElement('option');
+        option.text = prompt;
+        option.value = prompt;
+        pastPrompts.add(option);
+    });
+}
 
 async function chat_completion(text, show_loading=true, prompt="") {
     const apiKey = document.getElementById('api-key').value;
@@ -61,6 +102,7 @@ async function chat_completion(text, show_loading=true, prompt="") {
         const price_per_prompt_token = openai_prices_per_million_prompt_and_completion_tokens[model][0] / 1000000;
         const price_per_completion_token = openai_prices_per_million_prompt_and_completion_tokens[model][1] / 1000000;
         const price = price_per_prompt_token * prompt_tokens + price_per_completion_token * completion_tokens;
+        
         return [rewritten_text, price];
     } catch (error) {
         console.error(error);
@@ -73,6 +115,9 @@ let original_text = "";
 document.getElementById('rewriteText').addEventListener('click', () => {
     navigator.clipboard.readText()
         .then(async text => {
+            prompt = document.getElementById('prompt').value;
+            addPromptToPastPrompts(prompt);             
+
             original_text = text;
             document.getElementById('result').innerHTML = "";
             const price_div = document.getElementById('price');
@@ -466,10 +511,20 @@ document.getElementById('predefined-prompts').addEventListener('change', functio
     promptInput.value = this.options[this.selectedIndex].text;
     // trigger the input event
     promptInput.dispatchEvent(new Event('input'));
+    const predefinedPromptsDropdown = document.getElementById('predefined-prompts');
+    predefinedPromptsDropdown.selectedIndex = 0;
+});
+
+document.getElementById('past-prompts').addEventListener('change', function() {
+    const promptInput = document.getElementById('prompt');
+    promptInput.value = this.options[this.selectedIndex].text;
+    // trigger the input event
+    promptInput.dispatchEvent(new Event('input'));
+    const pastPromptsDropdown = document.getElementById('past-prompts');
+    pastPromptsDropdown.selectedIndex = 0;
 });
 
 
-// COOKIE LOGIC
 // LOCALSTORAGE LOGIC
 
 // Function to set an item in localStorage
@@ -506,10 +561,5 @@ function loadTextFromLocalStorage() {
 
 window.onload = function() {
     loadTextFromLocalStorage();
+    updatePastPromptsUI();
 };
-
-
-
-
-
-

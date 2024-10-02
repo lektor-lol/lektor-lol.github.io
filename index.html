@@ -26,7 +26,13 @@
         <div class="header">
             <p>Prompt for rewriting assistant </p>
             <div class="toggle-container">
-                <label for="predefined-prompts" style="margin-right: 10px; font-size: 0.8em;">Select a pre-defined prompt:</label>
+                <label for="past-prompts" style="margin-right: 10px; font-size: 0.8em;">Past prompts:</label>
+                <select id="past-prompts" style="width: 300px; white-space: normal;">
+                <option></option>
+                </select>
+                </div>
+                <div class="toggle-container">
+                <label for="predefined-prompts" style="margin-right: 10px; font-size: 0.8em;">Pre-defined prompt:</label>
                 <select id="predefined-prompts" style="width: 300px; white-space: normal;">
                 <option></option>
                 <option>Rewrite the following text to make it more concise and scientific. Only return the rewritten text. Please, use Latex if Latex is provided (including citations).</option>
