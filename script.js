@@ -231,8 +231,8 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
         let resultHTML = '';
 
         hover_buttons = `<div class="hover-buttons">
-                        <button class="diff-button reject-button reject-one">❌</button> <!-- Cross symbol -->
-                        <button class="diff-button accept-button accept-one">✅</button> <!-- Tick symbol -->
+                        <button class="diff-button reject-button reject-one" style="user-select: none;">❌</button> <!-- Cross symbol -->
+                        <button class="diff-button accept-button accept-one" style="user-select: none;">✅</button> <!-- Tick symbol -->
                     </div>`;
 
         diff.forEach((part, index) => {
@@ -292,6 +292,7 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
             addCommentBoxHoverEffect(newSpan);
         }
 
+
     async function redo_sentence_area(uniqueId) {
         const sentenceArea = document.getElementById(uniqueId);
         console.assert(sentenceArea.children.length === 2, "The sentence area should have exactly one child.");
@@ -302,21 +303,42 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
         create_initial_diff_html(text1, text2, comment);
     }
 
-    function remove_comment_and_merge_if_no_open_edits(uniqueId) {
+    function merge_and_remove_comment_if_no_open_edits(uniqueId) {
         const sentenceArea = document.getElementById(uniqueId);
+        // Merge adjacent unchanged text pieces
+        const textPieces = sentenceArea.querySelectorAll('.unchanged-text');
+        let mergedText = '';
+        let lastPiece = null;
+
+        textPieces.forEach((piece, index) => {
+            if (lastPiece && lastPiece.nextSibling === piece) {
+                // If this piece is adjacent to the last one, merge their text
+                mergedText += piece.textContent;
+                console.log('removing', piece)
+                piece.remove();
+            } else {
+                // If not adjacent, create a new span with merged text (if any)
+                if (mergedText) {
+                    lastPiece.textContent = mergedText;
+                    mergedText = '';
+                }
+                // Start a new merged text with this piece
+                mergedText = piece.textContent;
+                lastPiece = piece;
+            }
+
+            // Handle the last piece
+            if (index === textPieces.length - 1 && mergedText) {
+                lastPiece.textContent = mergedText;
+            }
+        });
+
         const openEdits = sentenceArea.querySelectorAll('.diff-part');
         if (openEdits.length === 0) {
             const commentBox = sentenceArea.querySelector('.comment-box');
             if (commentBox) {
                 commentBox.remove();
             }
-            const text_pieces = sentenceArea.querySelectorAll('.unchanged-text');
-            let text = "";
-            for (const piece of text_pieces) {
-                // Preserve newlines and trailing spaces
-                text += piece.textContent;
-            }
-            sentenceArea.innerHTML = `<span contenteditable="true" class="unchanged-text">${text}</span>`;
             const redoButton = document.createElement('button');
             redoButton.innerText = '🔄'; // Unicode for a refresh symbol
             redoButton.classList.add('diff-button', 'redo-button');
@@ -329,7 +351,6 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
     }
 
     function accept_edit(e) {
-        console.log("accepting edit for e with text ", e.target.innerText);
         const diffPart = e.target.closest('.diff-part');
         const del_elem = diffPart.querySelector('del');
         const ins_elem = diffPart.querySelector('ins');
@@ -345,7 +366,7 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
             if (diffPart.parentElement) {
                 const text = diffPart.querySelector('ins') ? diffPart.querySelector('ins').innerText : '';
                 diffPart.outerHTML = `<span class="unchanged-text" contenteditable="true" style="color:black">${text}</span>`;
-                remove_comment_and_merge_if_no_open_edits(uniqueId);
+                merge_and_remove_comment_if_no_open_edits(uniqueId);
             }
         });
     }
@@ -370,7 +391,7 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
             if (diffPart.parentElement) {
                 const text = diffPart.querySelector('del') ? diffPart.querySelector('del').innerText : '';
                 diffPart.outerHTML = `<span class="unchanged-text" contenteditable="true" style="color:black">${text}</span>`;
-                remove_comment_and_merge_if_no_open_edits(uniqueId);
+                merge_and_remove_comment_if_no_open_edits(uniqueId);
             }
         });
     }

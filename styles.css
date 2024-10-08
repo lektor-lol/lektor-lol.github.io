@@ -185,7 +185,7 @@ ins {
     display: flex; /* Set display to flex to enable flexbox layout */
     align-items: center; /* Align items vertically in the center */
     justify-content: center; /* Center the items horizontally */
-    opacity: 0.2; /* Set initial opacity to make buttons translucent */
+    opacity: 0.3; /* Set initial opacity to make buttons translucent */
     transition: opacity 0.1s; /* Smooth transition for opacity changes */
     box-shadow: none;
 }
@@ -209,7 +209,7 @@ ins {
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    opacity: 0.2;
+    opacity: 0.3;
     transition: opacity 0.1s;
 }
 
