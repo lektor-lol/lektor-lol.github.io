@@ -197,7 +197,7 @@ document.getElementById('rewriteText').addEventListener('click', () => {
 });
 
 async function create_rewrite(sentence, spacing_character="") {
-    const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, or other text or inquiries.";
+    const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, other text, or inquiries.";
     const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
     const price = data[1];
     const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
