@@ -59,12 +59,10 @@ function enable_undo_button_if_right_change_exists(uniqueId) {
 function undo_last_change() {
     const [uniqueId, new_diff] = past_state_transitions.pop();
     future_state_transitions.push([uniqueId, new_diff]);
-    console.log(`popped ${uniqueId} w/ ${new_diff}`)
     enable_button('redoLastUndo')
 
 
     const diff = get_last_change(uniqueId);
-    console.log("diff", diff);
     create_diff_html(uniqueId, diff);
     // Check if there are any previous changes for this uniqueId
     enable_undo_button_if_right_change_exists(uniqueId);
@@ -198,25 +196,24 @@ async function chat_completion(text, show_loading=true, prompt="") {
         }
         throw new Error(`HTTP error! status: ${response.status}, ${response.statusText}`);
     }
-    console.log(response)
     const data = await response.json();
-    const rewritten_text = data.choices[0].message.content;
+    const answer = data.choices[0].message.content;
     const prompt_tokens = data.usage.prompt_tokens;
     const completion_tokens = data.usage.completion_tokens;
     const price_per_prompt_token = openai_prices_per_million_prompt_and_completion_tokens[model][0] / 1000000;
     const price_per_completion_token = openai_prices_per_million_prompt_and_completion_tokens[model][1] / 1000000;
     const price = price_per_prompt_token * prompt_tokens + price_per_completion_token * completion_tokens;
     
-    return [rewritten_text, price];
+    return [answer, price];
 }
 
-async function create_rewrite(sentence, spacing_character="") {
+async function create_rewrite(sentence, spacing_character="", full_text=false) {
     const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, other text, or inquiries.";
     const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite:\n\n${sentence}`, true, promptText);
     const price = data[1];
     const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
     let comment = "";
-    if (data[0] !== sentence && comments_enabled) {
+    if (data[0] !== sentence && comments_enabled && !full_text) {
         const comment_data = await chat_completion(`Please give one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
         comment = comment_data[0];
     }
@@ -233,10 +230,6 @@ function html_to_text(html) {
 }
 
 let original_text = "";
-
-// document.getElementById('result').addEventListener('input', function(event) {
-//     console.log('input', event.target.textContent);
-// });
 
 document.getElementById('rewriteText').addEventListener('click', () => {
     navigator.clipboard.readText()
@@ -258,7 +251,7 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             price_div.innerText = "";
             let rewritten_text, _, price;
             try {
-                [rewritten_text, _, price] = await create_rewrite(original_text, "");
+                [rewritten_text, _, price] = await create_rewrite(original_text, "", true);
             } catch (error) {
                 console.error('Error:', error);
                 alert(error);
@@ -327,14 +320,15 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             for (let i = 1; i < parallelSentences.length; i++) {
                 let currentSentence = parallelSentences[i-1];
                 let nextSentence = parallelSentences[i];
-                    
+
                 // Prepare prompt to ask if sentences should be merged
-                const prompt = `Should these two sentences be merged into one? Only answer YES or NO.\n\nSentence 1: ${currentSentence.rewritten}\n\n\n\nSentence 2: ${nextSentence.rewritten}`;
-                    
+                //const prompt = `Are these two utterances seperated by the end of a sentence? Is the mark at the end of utterance indicating the ending of that sentence? Example 1:\nU1: 1.\n\n\n\nU2: August 2014.\nAnswer: NO\n\nExample 2:\nU1: I like sauce.\n\n\n\nU2: I like mayo on the 6.\nAnswer: YES\n\nOnly answer YES or NO.\n\nU1: ${currentSentence.rewritten}\n\n\n\nU2: ${nextSentence.rewritten}`;
+                const prompt = `Does the following sentence end here or go on. If it ends answer YES otherwise NO:\n\n\n\n"${currentSentence.original}"`
+
                 let shouldMerge = false;
                 try {
                     const [response, merge_price] = await chat_completion(prompt);
-                    shouldMerge = response.toLowerCase().includes('yes');
+                    shouldMerge = !response.toLowerCase().includes('yes');
                     price += merge_price;
 
                     
@@ -366,13 +360,17 @@ document.getElementById('rewriteText').addEventListener('click', () => {
 
 
             // const total_price = await calculateDiff(original_text, rewritten_text);
-            price_div.innerText = `The calculations have cost about USD ${(price).toFixed(6)}.`;
+            const model = document.getElementById('model').value
+            if (model === 'gpt-4o-mini') {
+                price_div.innerText = ''
+            } else {
+                price_div.innerText = `The calculations have cost about USD ${(price).toFixed(6)}.`;
+            }
     });
 });
 
 
 function create_diff_html(uniqueId, diff, comment="", a_redo_change=false) {
-    console.log('create diff for', uniqueId)
     if (!diff) {
         console.error("No diff provided for uniqueId:", uniqueId);
         return;
@@ -496,7 +494,6 @@ function create_diff_html(uniqueId, diff, comment="", a_redo_change=false) {
                 transition_ended = true;
                 const data_index_ins = diffPart.getAttribute('data-index-ins');
                 const data_index_del = diffPart.getAttribute('data-index-del');
-                console.log('triggering an accept on', e.target, 'but inside diff part', diffPart, 'and uni id', uniqueId)
                 create_diff_html(uniqueId, diffHandler.acceptEditByIndex(diff, data_index_ins, data_index_del));
 
                 // const text = diffPart.querySelector('ins') ? diffPart.querySelector('ins').innerText : '';
@@ -572,7 +569,6 @@ function create_diff_html(uniqueId, diff, comment="", a_redo_change=false) {
     // Add event listener to unchanged text areas to keep diff in sync
     span.querySelectorAll('.unchanged-text').forEach(unchangedSpan => {
         unchangedSpan.addEventListener('input', (e) => {
-            console.log('inputo', unchangedSpan.textContent);
             const index = parseInt(unchangedSpan.getAttribute('data-index'));
             diff[index][1] = unchangedSpan.textContent;
         });
