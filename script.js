@@ -164,6 +164,10 @@ function updatePastPromptsUI(savedPrompts = null) {
     });
 }
 
+const openai_api_url = 'https://api.openai.com/v1/chat/completions'
+const lektor_api_url = 'https://lektorlol-92565035393.europe-west4.run.app/chat/completions'
+// const lektor_api_url = 'http://127.0.0.1:1234/chat/completions'
+
 async function chat_completion(text, show_loading=true, prompt="") {
     const apiKey = document.getElementById('api-key').value;
     const model = document.getElementById('model').value;
@@ -171,37 +175,39 @@ async function chat_completion(text, show_loading=true, prompt="") {
         alert('No internet connection. Please check your connection and try again.');
         return; // Exit the function if offline
     }
-    try {
-        let fetch_method = show_loading ? fetchWithLoadingIndicator : fetch;
-        const messages = [
-                    { role: "system", content: prompt },
-                    { role: "user", content: text },
-                ]
-        console.log("messages", messages);
-        const response = await fetch_method('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: messages,
-            })
-        });
-        const data = await response.json();
-        const rewritten_text = data.choices[0].message.content;
-        const prompt_tokens = data.usage.prompt_tokens;
-        const completion_tokens = data.usage.completion_tokens;
-        const price_per_prompt_token = openai_prices_per_million_prompt_and_completion_tokens[model][0] / 1000000;
-        const price_per_completion_token = openai_prices_per_million_prompt_and_completion_tokens[model][1] / 1000000;
-        const price = price_per_prompt_token * prompt_tokens + price_per_completion_token * completion_tokens;
-        
-        return [rewritten_text, price];
-    } catch (error) {
-        console.error(error);
-        return [text, 0];
+    let fetch_method = show_loading ? fetchWithLoadingIndicator : fetch;
+    const messages = [
+                { role: "system", content: prompt },
+                { role: "user", content: text },
+            ]
+    const response = await fetch_method(model === 'gpt-4o-mini' ? lektor_api_url : openai_api_url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: messages,
+        }),
+        timeout: 20 * 1000 // in milli seconds
+    });
+    if (!response.ok) {
+        if (response.status === 401) {
+            throw new Error(`Unauthorized - please check your API key`);
+        }
+        throw new Error(`HTTP error! status: ${response.status}, ${response.statusText}`);
     }
+    console.log(response)
+    const data = await response.json();
+    const rewritten_text = data.choices[0].message.content;
+    const prompt_tokens = data.usage.prompt_tokens;
+    const completion_tokens = data.usage.completion_tokens;
+    const price_per_prompt_token = openai_prices_per_million_prompt_and_completion_tokens[model][0] / 1000000;
+    const price_per_completion_token = openai_prices_per_million_prompt_and_completion_tokens[model][1] / 1000000;
+    const price = price_per_prompt_token * prompt_tokens + price_per_completion_token * completion_tokens;
+    
+    return [rewritten_text, price];
 }
 
 async function create_rewrite(sentence, spacing_character="") {
@@ -211,7 +217,7 @@ async function create_rewrite(sentence, spacing_character="") {
     const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
     let comment = "";
     if (data[0] !== sentence && comments_enabled) {
-        const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
+        const comment_data = await chat_completion(`Please give one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
         comment = comment_data[0];
     }
     return [data[0] + spacing_character, comment, price];
@@ -233,11 +239,16 @@ let original_text = "";
 // });
 
 document.getElementById('rewriteText').addEventListener('click', () => {
-    // disable undo/redo buttons
-    disable_button('undoLastChange')
-    disable_button('redoLastUndo')
     navigator.clipboard.readText()
         .then(async text => {
+            const max_chars = 10000
+            if (text.length > max_chars) {
+                alert(`Sorry, the text is too long. Please limit your input to ${max_chars.toLocaleString()} characters.`)
+                return;
+            }
+            // disable undo/redo buttons
+            disable_button('undoLastChange')
+            disable_button('redoLastUndo')
             prompt = document.getElementById('prompt').value;
             addPromptToPastPrompts(prompt);             
 
@@ -245,7 +256,14 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             document.getElementById('result').innerHTML = "";
             const price_div = document.getElementById('price');
             price_div.innerText = "";
-            const [rewritten_text, _, price] = await create_rewrite(original_text, "");
+            let rewritten_text, _, price;
+            try {
+                [rewritten_text, _, price] = await create_rewrite(original_text, "");
+            } catch (error) {
+                console.error('Error:', error);
+                alert(error);
+                return;
+            }
             const diff = diffHandler.computeDiff(original_text, rewritten_text);
             // Split the original and rewritten text on punctuation in unchanged sections
 
@@ -304,9 +322,48 @@ document.getElementById('rewriteText').addEventListener('click', () => {
                 spacing: spacingCharacters[index]
             }));
 
-            for (const sentence of parallelSentences) {
-                await displayDiff(sentence.original, sentence.rewritten, sentence.spacing);
+            // Check if sentences should be merged
+            const mergedParallelSentences = [parallelSentences[0]];
+            for (let i = 1; i < parallelSentences.length; i++) {
+                let currentSentence = parallelSentences[i-1];
+                let nextSentence = parallelSentences[i];
+                    
+                // Prepare prompt to ask if sentences should be merged
+                const prompt = `Should these two sentences be merged into one? Only answer YES or NO.\n\nSentence 1: ${currentSentence.rewritten}\n\n\n\nSentence 2: ${nextSentence.rewritten}`;
+                    
+                let shouldMerge = false;
+                try {
+                    const [response, merge_price] = await chat_completion(prompt);
+                    shouldMerge = response.toLowerCase().includes('yes');
+                    price += merge_price;
+
+                    
+                    if (shouldMerge) {
+                        // Merge the sentences with the last sentence in mergedParallelSentences
+                        const lastSentence = mergedParallelSentences[mergedParallelSentences.length - 1];
+                        mergedParallelSentences[mergedParallelSentences.length - 1] = {
+                            original: lastSentence.original + lastSentence.spacing + nextSentence.original,
+                            rewritten: lastSentence.rewritten + lastSentence.spacing + nextSentence.rewritten,
+                            spacing: nextSentence.spacing
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error checking sentence merge:', error);
+                }
+                if (!shouldMerge) {
+                    mergedParallelSentences.push(nextSentence);
+                    if (mergedParallelSentences.length > 1) {
+                        const previous_index = mergedParallelSentences.length - 2
+                        const sentence = mergedParallelSentences[previous_index];
+                        displayDiff(sentence.original, sentence.rewritten, sentence.spacing);
+                    }
+                }
             }
+
+            const previous_index = mergedParallelSentences.length - 1
+            const sentence = mergedParallelSentences[previous_index];
+            displayDiff(sentence.original, sentence.rewritten, sentence.spacing);
+
 
             // const total_price = await calculateDiff(original_text, rewritten_text);
             price_div.innerText = `The calculations have cost about USD ${(price).toFixed(6)}.`;
@@ -659,6 +716,15 @@ document.getElementById('past-prompts').addEventListener('change', function() {
     promptInput.dispatchEvent(new Event('input'));
     const pastPromptsDropdown = document.getElementById('past-prompts');
     pastPromptsDropdown.selectedIndex = 0;
+});
+
+document.getElementById('model').addEventListener('change', function() {
+    const apiKeyLabel = document.getElementById('api-key').parentElement;
+    if (this.value !== 'gpt-4o-mini') {
+        apiKeyLabel.style.display = 'inline';
+    } else {
+        apiKeyLabel.style.display = 'none';
+    }
 });
 
 

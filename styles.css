@@ -138,8 +138,8 @@ button {
 #loading {
     display: none;
     position: absolute;
-    top: 3%;
-    left: 90%;
+    top: 50%;
+    left: 50%;
     transform: translate(-50%, -50%);
     /* grayed out background */
     /* background-color: rgba(0, 0, 0, 0.5); */
