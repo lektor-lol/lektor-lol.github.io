@@ -1,4 +1,97 @@
-openai_prices_per_million_prompt_and_completion_tokens = {
+import { DiffHandler } from './diff_handler.js';
+
+/*
+What does my current state contain?
+- current prompt
+- current edited text
+
+how does one change the state?
+- one can change the prompt
+- one can change the edited text
+    - overwrite all text
+    - accept/reject a change
+    - change the text
+*/
+
+let past_state_transitions = [] // list of tuples (uniqueId of span, new diff)
+let future_state_transitions = [] // stack of tuples, the last undone change on top
+
+function get_last_change(uniqueId) {
+    return past_state_transitions.findLast(([id]) => id === uniqueId)?.[1];
+}
+
+function add_change(uniqueId, diff, a_redo_change=false) {
+    const old_diff = get_last_change(uniqueId);
+    if (old_diff !== diff) {  // either this is undefined or this is something else, really
+        if (old_diff !== undefined){
+            enable_button('undoLastChange')    
+        }
+        past_state_transitions.push([uniqueId, diff]);
+        if (!a_redo_change) {
+            future_state_transitions = [];
+            disable_button('redoLastUndo')
+        }
+    }
+}
+
+function enable_button(id) {
+    document.getElementById(id).classList.remove('disabled-button');
+    document.getElementById(id).classList.add('button');
+    document.getElementById(id).disabled = false;
+}
+
+function disable_button(id) {
+    document.getElementById(id).classList.remove('button');
+    document.getElementById(id).classList.add('disabled-button'); 
+    document.getElementById(id).disabled = true;
+}
+
+function enable_undo_button_if_right_change_exists(uniqueId) {
+    const lastUniqueId = past_state_transitions[past_state_transitions.length - 1]?.[0];
+    const hasPreviousChange = past_state_transitions.slice(0, -1).some(([id, _]) => id === lastUniqueId);
+    if (hasPreviousChange) {
+        enable_button('undoLastChange')
+    } else {
+        disable_button('undoLastChange')
+    }
+}
+
+function undo_last_change() {
+    const [uniqueId, new_diff] = past_state_transitions.pop();
+    future_state_transitions.push([uniqueId, new_diff]);
+    console.log(`popped ${uniqueId} w/ ${new_diff}`)
+    enable_button('redoLastUndo')
+
+
+    const diff = get_last_change(uniqueId);
+    console.log("diff", diff);
+    create_diff_html(uniqueId, diff);
+    // Check if there are any previous changes for this uniqueId
+    enable_undo_button_if_right_change_exists(uniqueId);
+}
+
+function redo_last_change() {
+    const [uniqueId, new_diff] = future_state_transitions.pop();
+
+    create_diff_html(uniqueId, new_diff, "", true);
+    if (future_state_transitions.length === 0) {
+        disable_button('redoLastUndo')
+    }
+}
+
+document.getElementById('undoLastChange').addEventListener('mouseup', function() {
+    if (!this.disabled) {
+        undo_last_change();
+    }
+});
+document.getElementById('redoLastUndo').addEventListener('mouseup', function() {
+    if (!this.disabled) {
+        redo_last_change();
+    }
+});
+
+
+let openai_prices_per_million_prompt_and_completion_tokens = {
     "gpt-4o-mini": [0.15,0.6],
     "gpt-3.5-turbo": [0.5, 1.5],
     "gpt-4o": [5.0, 15.0],
@@ -6,6 +99,7 @@ openai_prices_per_million_prompt_and_completion_tokens = {
 }
 let activeFetchCount = 0;
 const loadingIndicator = document.getElementById('loading');
+const diffHandler = new DiffHandler();
 
 function updateLoadingIndicator() {
     if (activeFetchCount > 0) {
@@ -78,7 +172,7 @@ async function chat_completion(text, show_loading=true, prompt="") {
         return; // Exit the function if offline
     }
     try {
-        fetch_method = show_loading ? fetchWithLoadingIndicator : fetch;
+        let fetch_method = show_loading ? fetchWithLoadingIndicator : fetch;
         const messages = [
                     { role: "system", content: prompt },
                     { role: "user", content: text },
@@ -110,9 +204,38 @@ async function chat_completion(text, show_loading=true, prompt="") {
     }
 }
 
+async function create_rewrite(sentence, spacing_character="") {
+    const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, other text, or inquiries.";
+    const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite:\n\n${sentence}`, true, promptText);
+    const price = data[1];
+    const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
+    let comment = "";
+    if (data[0] !== sentence && comments_enabled) {
+        const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
+        comment = comment_data[0];
+    }
+    return [data[0] + spacing_character, comment, price];
+}
+
+
+function text_to_html(text) {
+    return text.replace(/\n/g, '<br>');
+}
+
+function html_to_text(html) {
+    return html.replace(/<br>/g, '\n');
+}
+
 let original_text = "";
 
+// document.getElementById('result').addEventListener('input', function(event) {
+//     console.log('input', event.target.textContent);
+// });
+
 document.getElementById('rewriteText').addEventListener('click', () => {
+    // disable undo/redo buttons
+    disable_button('undoLastChange')
+    disable_button('redoLastUndo')
     navigator.clipboard.readText()
         .then(async text => {
             prompt = document.getElementById('prompt').value;
@@ -123,8 +246,9 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             const price_div = document.getElementById('price');
             price_div.innerText = "";
             const [rewritten_text, _, price] = await create_rewrite(original_text, "");
-            const diff = compute_diff(original_text, rewritten_text);
+            const diff = diffHandler.computeDiff(original_text, rewritten_text);
             // Split the original and rewritten text on punctuation in unchanged sections
+
             let originalSentences = [];
             let rewrittenSentences = [];
             let spacingCharacters = [];
@@ -135,10 +259,8 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             for (let i = 0; i < diff.length; i++) {
                 const operation = diff[i][0];
                 const content = diff[i][1];
-                console.log("content", content);
                 if (operation === 0) { // Unchanged section
                     const segments = content.split(/([.!?])/);
-                    console.log("segments", segments);
                     for (let j = 0; j < segments.length; j++) {
                         currentOriginal += segments[j];
                         currentRewritten += segments[j];
@@ -151,7 +273,7 @@ document.getElementById('rewriteText').addEventListener('click', () => {
                             else {
                                 currentSpacing = "";
                                 if (i < diff.length - 1) {
-                                    next_content = diff[i+1][1];
+                                    let next_content = diff[i+1][1];
                                     currentSpacing = next_content.match(/^\s*/)[0];
                                 }
                             }
@@ -170,7 +292,6 @@ document.getElementById('rewriteText').addEventListener('click', () => {
                 }
             }
 
-
             if (currentOriginal || currentRewritten) {
                 originalSentences.push(currentOriginal.trim());
                 rewrittenSentences.push(currentRewritten.trim());
@@ -184,173 +305,121 @@ document.getElementById('rewriteText').addEventListener('click', () => {
             }));
 
             for (const sentence of parallelSentences) {
-                console.log("spacing", sentence.spacing);
-                console.log("original", sentence.original);
-                console.log("rewritten", sentence.rewritten);
-                await calculateDiff(sentence.original, sentence.rewritten, sentence.spacing);
+                await displayDiff(sentence.original, sentence.rewritten, sentence.spacing);
             }
-
 
             // const total_price = await calculateDiff(original_text, rewritten_text);
             price_div.innerText = `The calculations have cost about USD ${(price).toFixed(6)}.`;
     });
 });
 
-async function create_rewrite(sentence, spacing_character="") {
-    const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, other text, or inquiries.";
-    const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite the sentence:\n\n${sentence}`, true, promptText);
-    const price = data[1];
-    const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
-    let comment = "";
-    if (data[0] !== sentence && comments_enabled) {
-        const comment_data = await chat_completion(`Please give a one to two bullet points with maximum 5 words each, e.g. something like "shortened" or "removed unnecessary repetition", or "fixed grammar". What did change from \n\n ${sentence} \n\n to \n\n ${data[0]} \n\n given that this edit was performed based on the prompt ${prompt}`);
-        comment = comment_data[0];
+
+function create_diff_html(uniqueId, diff, comment="", a_redo_change=false) {
+    console.log('create diff for', uniqueId)
+    if (!diff) {
+        console.error("No diff provided for uniqueId:", uniqueId);
+        return;
     }
-    return [data[0] + spacing_character, comment, price];
-}
+    const span = getSpan(uniqueId)
+    if (add_change) {
+        add_change(uniqueId, diff, a_redo_change);
+    }
+    let resultHTML = '';
 
-function compute_diff(text1, text2) {
-    const dmp = new diff_match_patch();
-    const diff = dmp.diff_main(text1, text2);
-    dmp.diff_cleanupSemantic(diff);
-    return diff; // an array of [[{insert=1, delete=-1, equal=0}, text], ...]
-}
+    let hover_buttons = `<div id="hover-buttons-${getUniqueString()}" class="hover-buttons" contenteditable="false">
+                    <button class="diff-button reject-button reject-one" contenteditable="false" style="user-select: none;">❌</button> <!-- Cross symbol -->
+                    <button class="diff-button accept-button accept-one" contenteditable="false" style="user-select: none;">✅</button> <!-- Tick symbol -->
+                </div>`;
 
-async function calculateDiff(sentence, rewritten_sentence, spacing_character="") {
-    const resultDiv = document.getElementById('result');
-
-    const uniqueId = 'result-' + Math.random().toString(36).substr(2, 9);
-    const newSpan = document.createElement('span');
-    newSpan.id = uniqueId;
-    newSpan.classList.add('sentence-area');
-    resultDiv.appendChild(newSpan);
-
-    function create_initial_diff_html(text1, text2, comment="") {
-        diff = compute_diff(text1, text2);
-
-        let resultHTML = '';
-
-        hover_buttons = `<div class="hover-buttons">
-                        <button class="diff-button reject-button reject-one" style="user-select: none;">❌</button> <!-- Cross symbol -->
-                        <button class="diff-button accept-button accept-one" style="user-select: none;">✅</button> <!-- Tick symbol -->
-                    </div>`;
-
-        diff.forEach((part, index) => {
-            if (part[0] === 1) {
-                // Added text (green)
-                const prevPart = diff[index - 1];
-                if (prevPart && prevPart[0] === -1) {
-                    // Previous part was deleted text (red)
-                    resultHTML += `<span class="text diff-part edit-area" data-index="${index}"><del>${prevPart[1]}</del><ins>${part[1]}</ins>${hover_buttons}</span>`;
-                } else {
-                    resultHTML += `<span class="text diff-part only-ins edit-area"><ins class=" edit-area" data-index="${index}">${part[1]}</ins>${hover_buttons}</span>`;
-                }
-            } else if (part[0] === -1) {
-                // Deleted text (red)
-                const nextPart = diff[index + 1];
-                if (nextPart && nextPart[0] === 1) {
-                    // Next part is added text (green)
-                    // Handled in the next iteration
-                } else {
-                    resultHTML += `<span class="text diff-part only-del edit-area"><del class=" edit-area" data-index="${index}">${part[1]}</del>${hover_buttons}</span>`;
-                }
+    diff.forEach((part, index) => {
+        if (part[0] === 1) {
+            // Added text (green)
+            const prevPart = diff[index - 1];
+            if (prevPart && prevPart[0] === -1) {
+                // Previous part was deleted text (red)
+                resultHTML += `<span id="diff-part-${getUniqueString()}" class="text diff-part edit-area" data-index-ins="${index}" data-index-del="${index-1}"><del contenteditable="false">${text_to_html(prevPart[1])}</del><ins contenteditable="false">${text_to_html(part[1])}</ins>${hover_buttons}</span>`;
             } else {
-                // Unchanged text
-                resultHTML += `<span contenteditable="true" class="text unchanged-text" data-index="${index}" style="color:black">${part[1]}</span>`;
+                resultHTML += `<span class="text diff-part only-ins edit-area" data-index-ins="${index}"><ins class="edit-area" contenteditable="false">${text_to_html(part[1])}</ins>${hover_buttons}</span>`;
             }
-        });
+        } else if (part[0] === -1) {
+            // Deleted text (red)
+            const nextPart = diff[index + 1];
+            if (nextPart && nextPart[0] === 1) {
+                // Next part is added text (green)
+                // Handled in the next iteration
+            } else {
+                resultHTML += `<span class="text diff-part only-del edit-area" data-index-del="${index}"><del class="edit-area" contenteditable="false">${text_to_html(part[1])}</del>${hover_buttons}</span>`;
+            }
+        } else {
+            // Unchanged text
+            resultHTML += `<span contenteditable="true" class="text unchanged-text" data-index="${index}" style="color:black">${text_to_html(part[1])}</span>`;
+        }
+    });
 
-        newSpan.innerHTML = resultHTML;
-        comment_part = (comment !== "") ? `<span class='comment-label' style="color: #888; font-size: 0.8em;">Comment:</span>  <p class="comment-text">${comment.replace(/\n/g, '<br>')}</p>` : "";
-        const sentenceHoverButtons = `<div class="comment-box">
-                                        ${comment_part}
-                                        <span style="color: #888; font-size: 0.8em;">Accept or reject all of the above:</span>
-                                        <button class="diff-button reject-button reject-all">❌</button> <!-- Cross symbol -->
-                                        <button class="diff-button accept-button accept-all">✅</button> <!-- Tick symbol -->
-                                    </div>`;
+    span.innerHTML = resultHTML;
+    let comment_part = (comment !== "") ? `<span class='comment-label' style="color: #888; font-size: 0.8em;">Comment:</span>  <p class="comment-text">${text_to_html(comment)}</p>` : "";
+    const sentenceHoverButtons = `<div class="comment-box" contenteditable="false">
+                                    ${comment_part}
+                                    <span style="color: #888; font-size: 0.8em;">Accept or reject all of the above:</span>
+                                    <button class="diff-button reject-button reject-all">❌</button> <!-- Cross symbol -->
+                                    <button class="diff-button accept-button accept-all">✅</button> <!-- Tick symbol -->
+                                </div>`;
 
-        // Add this new function after the sentenceHoverButtons definition
-        function addCommentBoxHoverEffect(newSpan) {
-            const commentBoxButtons = newSpan.querySelectorAll('.comment-box .diff-button');
-            commentBoxButtons.forEach(button => {
-                button.addEventListener('mouseenter', () => {
-                    newSpan.querySelectorAll('.text').forEach(span => {
-                        span.classList.add('hover-highlight');
-                    });
-                });
-                button.addEventListener('mouseleave', () => {
-                    newSpan.querySelectorAll('.text').forEach(span => {
-                        span.classList.remove('hover-highlight');
-                    });
+    // Add this new function after the sentenceHoverButtons definition
+    function addCommentBoxHoverEffect(newSpan) {
+        const commentBoxButtons = newSpan.querySelectorAll('.comment-box .diff-button');
+        commentBoxButtons.forEach(button => {
+            button.addEventListener('mouseenter', () => {
+                newSpan.querySelectorAll('.text').forEach(span => {
+                    span.classList.add('hover-highlight');
                 });
             });
-        }
+            button.addEventListener('mouseleave', () => {
+                newSpan.querySelectorAll('.text').forEach(span => {
+                    span.classList.remove('hover-highlight');
+                });
+            });
+        });
+    }
 
-        // Call this function after adding the sentenceHoverButtons
-        if (newSpan.querySelector('.diff-part')) {
-            newSpan.innerHTML += sentenceHoverButtons;
-            addCommentBoxHoverEffect(newSpan);
-        }
+    // Call this function after adding the sentenceHoverButtons
+    if (span.querySelector('.diff-part')) {
+        span.innerHTML += sentenceHoverButtons;
+        addCommentBoxHoverEffect(span);
+    } else {
+        // Remove hover highlight from all spans in the sentence area
+        const allSpans = span.querySelectorAll('span');
+        allSpans.forEach(span => {
+            span.classList.remove('hover-highlight');
+        });
 
+        const redoButton = document.createElement('button');
+        redoButton.innerText = '🔄'; // Unicode for a refresh symbol
+        redoButton.classList.add('diff-button', 'redo-button');
+        redoButton.contentEditable = false;
+        redoButton.addEventListener('click', async () => {
+            await redo_sentence_area(uniqueId);
+        });
+
+        span.appendChild(redoButton);
+    }
 
     async function redo_sentence_area(uniqueId) {
-        const sentenceArea = document.getElementById(uniqueId);
-        console.assert(sentenceArea.children.length === 2, "The sentence area should have exactly one child.");
-        const spanChild = sentenceArea.children[0];
-        console.assert(spanChild.classList.contains('unchanged-text'), "The child should have the class 'unchanged-text'.");
-        const text1 = spanChild.innerText;
-        const [text2, comment, price] = await create_rewrite(text1, spacing_character);
-        create_initial_diff_html(text1, text2, comment);
-    }
-
-    function merge_and_remove_comment_if_no_open_edits(uniqueId) {
-        const sentenceArea = document.getElementById(uniqueId);
-        // Merge adjacent unchanged text pieces
-        const textPieces = sentenceArea.querySelectorAll('.unchanged-text');
-        let mergedText = '';
-        let lastPiece = null;
-
-        textPieces.forEach((piece, index) => {
-            if (lastPiece && lastPiece.nextSibling === piece) {
-                // If this piece is adjacent to the last one, merge their text
-                mergedText += piece.textContent;
-                console.log('removing', piece)
-                piece.remove();
-            } else {
-                // If not adjacent, create a new span with merged text (if any)
-                if (mergedText) {
-                    lastPiece.textContent = mergedText;
-                    mergedText = '';
-                }
-                // Start a new merged text with this piece
-                mergedText = piece.textContent;
-                lastPiece = piece;
-            }
-
-            // Handle the last piece
-            if (index === textPieces.length - 1 && mergedText) {
-                lastPiece.textContent = mergedText;
-            }
-        });
-
-        const openEdits = sentenceArea.querySelectorAll('.diff-part');
-        if (openEdits.length === 0) {
-            const commentBox = sentenceArea.querySelector('.comment-box');
-            if (commentBox) {
-                commentBox.remove();
-            }
-            const redoButton = document.createElement('button');
-            redoButton.innerText = '🔄'; // Unicode for a refresh symbol
-            redoButton.classList.add('diff-button', 'redo-button');
-            redoButton.addEventListener('click', async () => {
-                await redo_sentence_area(uniqueId);
-            });
-
-            sentenceArea.appendChild(redoButton);
+        if (!diff.every(part => part[0] === 0)) {
+            throw new Error("Diff should have no edits");
         }
+        let content = diff.map(part => part[1]).join('');
+        let trailingSpace = content.match(/\s$/);
+        if (trailingSpace) {
+            content = content.slice(0, -1);
+        } else {
+            trailingSpace = "";
+        }
+        const [text2, comment, price] = await create_rewrite(content, trailingSpace);
+        create_diff_html(uniqueId, diffHandler.computeDiff(content, text2), comment);
     }
 
-    function accept_edit(e) {
+    function accept_edit(e, update_diff=true) {
         const diffPart = e.target.closest('.diff-part');
         const del_elem = diffPart.querySelector('del');
         const ins_elem = diffPart.querySelector('ins');
@@ -360,24 +429,33 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
         if (ins_elem) {
             ins_elem.classList.add('black-font')
         }
-        diffPart.addEventListener('transitionend', () => {
+
+        let transition_ended = false;
+
+        diffPart.addEventListener('transitionend', (e) => {
             // if there are both a del and an ins (thus an edit), this callback will be called twice
             // thus we first check, whether the diffPart still has a parent
-            if (diffPart.parentElement) {
-                const text = diffPart.querySelector('ins') ? diffPart.querySelector('ins').innerText : '';
-                diffPart.outerHTML = `<span class="unchanged-text" contenteditable="true" style="color:black">${text}</span>`;
-                merge_and_remove_comment_if_no_open_edits(uniqueId);
+            if (!transition_ended && update_diff) {
+                transition_ended = true;
+                const data_index_ins = diffPart.getAttribute('data-index-ins');
+                const data_index_del = diffPart.getAttribute('data-index-del');
+                console.log('triggering an accept on', e.target, 'but inside diff part', diffPart, 'and uni id', uniqueId)
+                create_diff_html(uniqueId, diffHandler.acceptEditByIndex(diff, data_index_ins, data_index_del));
+
+                // const text = diffPart.querySelector('ins') ? diffPart.querySelector('ins').innerText : '';
+                // diffPart.outerHTML = `<span class="unchanged-text" contenteditable="true" style="color:black">${text}</span>`;
+                // merge_and_remove_comment_if_no_open_edits(uniqueId, data_index);
             }
         });
     }
 
-    document.querySelectorAll('.accept-one').forEach(btn => {
+    span.querySelectorAll('.accept-one').forEach(btn => {
         btn.addEventListener('click', (e) => {
             accept_edit(e);
         });
     });
 
-    function reject_edit(e) {
+    function reject_edit(e, update_diff=true) {
         const diffPart = e.target.closest('.diff-part');
         const del_elem = diffPart.querySelector('del');
         const ins_elem = diffPart.querySelector('ins');
@@ -387,51 +465,89 @@ async function calculateDiff(sentence, rewritten_sentence, spacing_character="")
         if (del_elem) {
             del_elem.classList.add('black-font')
         }
+        let transition_ended = false;
         diffPart.addEventListener('transitionend', () => {
-            if (diffPart.parentElement) {
-                const text = diffPart.querySelector('del') ? diffPart.querySelector('del').innerText : '';
-                diffPart.outerHTML = `<span class="unchanged-text" contenteditable="true" style="color:black">${text}</span>`;
-                merge_and_remove_comment_if_no_open_edits(uniqueId);
+            if (!transition_ended && update_diff) {
+                transition_ended = true;
+                const data_index_ins = diffPart.getAttribute('data-index-ins');
+                const data_index_del = diffPart.getAttribute('data-index-del');
+                create_diff_html(uniqueId, diffHandler.rejectEditByIndex(diff, data_index_ins, data_index_del));
             }
         });
     }
 
-    document.querySelectorAll('.reject-one').forEach(btn => {
+    span.querySelectorAll('.reject-one').forEach(btn => {
         btn.addEventListener('click', (e) => {
             reject_edit(e);
         });
     });
 
-    function accept_all_edits(e) {
-        newSpan.querySelectorAll('.diff-part').forEach(diffPart => {
+    function accept_all_edits_callback(e) {
+        span.querySelectorAll('.diff-part').forEach(diffPart => {
             const acceptButton = diffPart.querySelector('.accept-button');
             if (acceptButton) {
-                accept_edit({ target: acceptButton });
+                accept_edit({ target: acceptButton }, false);
             }
         });
+        span.addEventListener('transitionend', () => {
+            create_diff_html(uniqueId, diffHandler.acceptAllEdits(diff));
+        }, { once: true });
     }
 
-    function reject_all_edits(e) {
-        newSpan.querySelectorAll('.diff-part').forEach(diffPart => {
+    function reject_all_edits_callback(e) {
+        span.querySelectorAll('.diff-part').forEach(diffPart => {
             const rejectButton = diffPart.querySelector('.reject-button');
             if (rejectButton) {
-                reject_edit({ target: rejectButton });
+                reject_edit({ target: rejectButton }, false);
             }
         });
+        span.addEventListener('transitionend', () => {
+            create_diff_html(uniqueId, diffHandler.rejectAllEdits(diff));
+        }, { once: true });
     }
 
-    if (newSpan.querySelector('.accept-all')) {
-        newSpan.querySelector('.accept-all').addEventListener('click', accept_all_edits);
-        newSpan.querySelector('.reject-all').addEventListener('click', reject_all_edits);
+    if (span.querySelector('.accept-all')) {
+        span.querySelector('.accept-all').addEventListener('click', accept_all_edits_callback);
+        span.querySelector('.reject-all').addEventListener('click', reject_all_edits_callback);
     }
 
+
+    // Add event listener to unchanged text areas to keep diff in sync
+    span.querySelectorAll('.unchanged-text').forEach(unchangedSpan => {
+        unchangedSpan.addEventListener('input', (e) => {
+            console.log('inputo', unchangedSpan.textContent);
+            const index = parseInt(unchangedSpan.getAttribute('data-index'));
+            diff[index][1] = unchangedSpan.textContent;
+        });
+    });
 
     document.getElementById('result').classList.add('result-filled');
-    }
+}
+
+function getUniqueString() {
+    return Math.random().toString(36).substr(2, 9);
+}
+
+async function displayDiff(sentence, rewritten_sentence, spacing_character="") {
+    const resultDiv = document.getElementById('result');
+
+    const uniqueId = 'result-' + getUniqueString();
+    const newSpan = document.createElement('span');
+    newSpan.id = uniqueId;
+    newSpan.classList.add('sentence-area');
+    resultDiv.appendChild(newSpan);
+
+
     const text1 = sentence + spacing_character;
     const text2 = rewritten_sentence + spacing_character;
-    create_initial_diff_html(text1, text2);
+    create_diff_html(uniqueId, diffHandler.computeDiff(text1, text2));
     return price;
+}
+
+function getSpan(uniqueId){
+    const resultDiv = document.getElementById('result');
+    const span = resultDiv.querySelector(`#${uniqueId}`);
+    return span;
 }
 
 
@@ -484,7 +600,7 @@ const observer = new MutationObserver(updateButtonState);
 observer.observe(document.getElementById('result'), { childList: true, subtree: true, characterData: true });
 
 const tooltip = document.getElementById('copy-all-text-button-tooltip');
-tooltip_standard_text = "You need to first go through all changes";
+let tooltip_standard_text = "You need to first go through all changes";
 tooltip.textContent = tooltip_standard_text;
 
 // Show/hide tooltip on hover when button is disabled
@@ -580,7 +696,17 @@ function loadTextFromLocalStorage() {
     });
 }
 
+
 window.onload = function() {
     loadTextFromLocalStorage();
     updatePastPromptsUI();
+    window.debug = {
+        get_last_change,
+        add_change,
+        undo_last_change,
+        past_state_transitions,
+        diffHandler,
+        get_current_rewritten_text,
+        future_state_transitions,
+    }
 };

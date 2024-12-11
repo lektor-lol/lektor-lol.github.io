@@ -76,6 +76,15 @@ button {
     background-color: #0056b3;
 }
 
+.disabled-button {
+    opacity: 0.5;
+    background-color: #ccc;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    cursor: default !important;
+}
+
 #result {
     margin-top: 20px;
     line-height: 1.5;
@@ -97,8 +106,14 @@ button {
     transition: opacity 0.2s, color 0.2s;
     margin: 0;
 }
-  
-
+ 
+.unchanged-text {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    cursor: text;
+}
 
 .diff-part del,
 .diff-part ins {
@@ -198,6 +213,11 @@ ins {
     border: none;
     padding: 0;
     margin: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    pointer-events: auto;
 }
 
 .edit-area:hover .hover-buttons {
@@ -218,6 +238,10 @@ ins {
     opacity: 1;
 }
 
+.undo-not-possible {
+    opacity: 0.5;
+}
+
 
 
 .sentence-area {
@@ -230,6 +254,7 @@ ins {
     transition: opacity 0.1s;
     background-color: #ddd; /* Set background color to grey */
     padding: 10px; /* Add padding to the comment text */
+    user-select: none;
 }
 
 .comment-box .comment-text {
@@ -284,4 +309,12 @@ ins {
     text-align: center;
     box-sizing: border-box;
     z-index: 1001;
+}
+
+del {
+    user-select: none;
+}
+
+ins {
+    user-select: text;
 }

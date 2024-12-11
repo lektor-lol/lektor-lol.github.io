@@ -58,14 +58,22 @@
             </label>
         </div>
         <br>
-        <button id="rewriteText" class="button">Paste and rewrite text currently in clipboard</button>
-        <div id="result"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <button id="rewriteText" class="button">Paste and rewrite text currently in clipboard</button>
+            <div style="display: flex;">
+                <button disabled id="undoLastChange" class="disabled-button">↩️</button>
+                <button disabled id="redoLastUndo" class="disabled-button" style="margin-left: 10px;">⟲️</button>
+            </div>
+        </div>
+        <div id="result">
+        </div>
         <br>
         <div id="price" style="font-size: 0.8em; color: #888;"></div>
     </div>
     <div id="copy-all-text-button-tooltip"></div>
     <button id="copy-all-text-button" class="floating-button">Copy All Text</button>
+
     <script src="diff_match_patch.js"></script>
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
