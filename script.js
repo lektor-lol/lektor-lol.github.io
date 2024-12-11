@@ -209,7 +209,8 @@ async function chat_completion(text, show_loading=true, prompt="") {
 
 async function create_rewrite(sentence, spacing_character="", full_text=false) {
     const promptText = document.getElementById('prompt').value + " Please return only the rewritten text. No comments, other text, or inquiries.";
-    const data = await chat_completion(`In this text\n\n${original_text}\n\n. Please, rewrite:\n\n${sentence}`, true, promptText);
+    const prefix = full_text ? "" : `In this text:\n\n${original_text}\n\n`;
+    const data = await chat_completion(`${prefix}Please, rewrite:\n\n${sentence}`, true, promptText);
     const price = data[1];
     const comments_enabled = document.getElementById('commentToggle') ? document.getElementById('commentToggle').checked : true;
     let comment = "";
